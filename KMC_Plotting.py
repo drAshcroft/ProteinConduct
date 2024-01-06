@@ -47,7 +47,7 @@ def PlotKMC(activeAminos,successDwellTimes, dwellTimes, passes, electronTimes, d
     
     
     #ACS Omega paper page G  using this to give a rough estimate of the current
-    currents_sum = np.log10(6.24e-18/np.array(electronTimes)+1e-25)
+    currents_sum = np.log10(6.24e-18/(np.array(electronTimes)*1e-9)+1e-25)+9
     ax[2].hist(currents_sum, bins=50)
     ax[2].set_xlabel('Current log10(nA)')
     ax[2].set_ylabel('Count')
@@ -89,7 +89,7 @@ def PlotPathMetrics(G, activeAminos,shortestPaths, title):
                 
     outTimes = []
     for node in G.nodes():
-        outTimes.append(G.nodes[node]['outtime'])
+        outTimes.append(1/G.nodes[node]['outrate'])
     
     redoxPoints = [acid['redoxEnergy_EV'] for acid in activeAminos]  
     redoxPoints = (np.array(redoxPoints)-np.min(redoxPoints)) /(np.max(redoxPoints)-np.min(redoxPoints))
@@ -402,7 +402,7 @@ def PlotPDBProjections(activeAminos,atom_COM,injectionAminos,exitAminos):
     
   
     
-def PlotGraphRates(gammas, distanceRates, energyRates, transferRates, voltageRates):
+def PlotGraphRates(reorg, gammas, distanceRates, energyRates, transferRates, voltageRates):
     #yes it is a lot of graphs
     fig, ax = plt.subplots(2, 2, figsize=(10, 10))
     ax = np.ravel(ax)
@@ -415,29 +415,41 @@ def PlotGraphRates(gammas, distanceRates, energyRates, transferRates, voltageRat
     ax[0].set_title('Gamma Distribution')
 
     rates = np.array(distanceRates)
-    ax[1].plot(rates[:, 0], np.log10(rates[:, 1]*1e-9), '.', label='Static')
-    ax[1].plot(rates[:, 0], np.log10(rates[:, 2]*1e-9), '.', label='Vibrate')
-    ax[1].plot(rates[:, 0], np.log10(rates[:, 3]*1e-9), '.', label='Min_radius')
+    r=rates[:,0]
+    ax[1].plot(rates[:, 0], np.log10(rates[:, 1])-9, '.', label='Static')
+    ax[1].plot(rates[:, 0], np.log10(rates[:, 2])-9, '.', label='Vibrate')
+    ax[1].plot(rates[:, 0], np.log10(rates[:, 3])-9, '.', label='Min_radius')
+    
     ax[1].set_title('Distance Prefactor')
     ax[1].set_ylabel('Transfer Rate log$_{10}$(ns$^{-1}$)')
-    ax[1].set_xlabel('Distance (A)')
+    ax[1].set_xlabel('Edge-Edge distance (A)')
+    #ax[1].set_xlim([2, 28])
+    #ax[1].set_ylim([-4, 14])
     ax[1].legend()
 
     rates = np.array(energyRates)
     ax[2].plot(rates[:, 0], np.log10( (rates[:, 1]*1e-9)), '.', label='Forward')
     ax[2].plot(rates[:, 0], np.log10( (rates[:, 2]*1e-9)), '.', label='Backward')
-    ax[2].set_title("Gibb's Change")
+    ax[2].set_title("ΔF$\u2021$")
     ax[2].set_ylabel('Transfer Rate log$_{10}$(ns$^{-1}$)')
     ax[2].set_xlabel('ΔG$_0$ + eΔV (eV)')
     ax[2].legend()
 
     rates = np.array(transferRates)
+   
+    
     ax[3].plot(rates[:, 0], np.log10(rates[:, 1]*1e-9), '.', label='Static')
     ax[3].plot(rates[:, 0], np.log10(rates[:, 2]*1e-9), '.', label='Vibrate')
     ax[3].plot(rates[:, 0], np.log10(rates[:, 3]*1e-9), '.', label='Min_radius')
+    
+    dG=.85- 1.08
+    ax[3].plot(r, 15-.6*r-3.1*(reorg)**2/reorg-9,'-',alpha=.25,label='Dutton Y-Y') 
+    ax[3].plot(r, 15-.6*r-3.1*(dG+reorg)**2/reorg-9,'-',alpha=.25,label='Dutton Y-W') 
+    ax[3].plot(r, 15-.6*r-3.1*(reorg-dG)**2/reorg-9,'-',alpha=.25,label='Dutton W-Y') 
+    
     ax[3].set_title('K$_{Hopping}$ for distance, redox energies, and voltages')
     ax[3].set_ylabel('Transfer Rate log$_{10}$(ns$^{-1}$)')
-    ax[3].set_xlabel('Distance (A)')
+    ax[3].set_xlabel('Edge-Edge distance (A)')
     ax[3].legend()
 
     plt.show()
@@ -480,7 +492,7 @@ def PlotPaths(activeAminos,shortestPaths,ax,injectionAminos,exitAminos):
     
     cc=0
     lastTime =0 
-    for i  in  range(3,len( shortestPaths ),1+int(np.floor(len( shortestPaths )/100))):
+    for i  in  range(0,len( shortestPaths ),1+int(np.floor(len( shortestPaths )/100))):
         path=shortestPaths[ i]
         lastTime = path['time']
         newCoords = []
@@ -515,7 +527,7 @@ def PlotPaths(activeAminos,shortestPaths,ax,injectionAminos,exitAminos):
             
 def PlotTransitTimes(axTime, axCurrent, shortestPaths, label):
     times = np.array([x['time'] for x in shortestPaths if x['time'] >0 ])
-    times_sum = np.log10(np.array([x  for x in times ]) )
+    times_sum = np.log10(  times  )
     
     #ACS Omega paper page G
     currents_sum  = np.log10(1.0/(times *1e-9) )

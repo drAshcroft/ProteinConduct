@@ -11,6 +11,7 @@ from gridData import Grid
 rng= random.default_rng()
 import matplotlib.pyplot as plt
 import os
+import json
 import numpy as np
 import networkx as nx
 import seaborn as sns
@@ -27,8 +28,9 @@ sns.set_context("paper")
 atomMass = {'C': 12.0107, 'H': 1.00794,
             'N': 14.0067, 'O': 15.9994, 'S': 32.065}
 
-atomRadius = {'C': 0.77, 'H': 0.37,
-              'N': 0.75, 'O': 0.73, 'S': 1.02}  # https://en.wikipedia.org/wiki/Atomic_radii_of_the_elements_(data_page)
+atomicVanDerWaalsRadius_A = {'C': 1.7, 'H': 1.2, 'N': 1.55, 'O': 1.52, 'S': 1.8}  # https://en.wikipedia.org/wiki/Atomic_radii_of_the_elements_(data_page)
+atomicSingleBondLength_A = {'C': 1.54, 'H': 1.09, 'N': 1.47, 'O': 1.43, 'S': 1.82}  # https://en.wikipedia.org/wiki/Atomic_radii_of_the_elements_(data_page)
+
 
 def LoadAminoCenterOfMass(pdb_file,redoxEnergies,startSites,exitSites,verbose=False ):
     """Loads a pbd file, a potential file and a charge file and returns the center of mass of each amino acid
@@ -52,7 +54,7 @@ def LoadAminoCenterOfMass(pdb_file,redoxEnergies,startSites,exitSites,verbose=Fa
         for chain in model:
             for residue in chain.get_residues():
                 #get the atoms for this residue
-                oxygens,potentials,charge=GetSideAtoms(residue,hasPotential,g,origin,delta)
+                sideAtoms,potentials,charge=GetSideAtoms(residue,hasPotential,g,origin,delta)
                     
                 if hasPotential:
                         coordsA =np.array( residue.center_of_mass())
@@ -73,7 +75,7 @@ def LoadAminoCenterOfMass(pdb_file,redoxEnergies,startSites,exitSites,verbose=Fa
                             'chain':chain.get_id(),
                             'index':residue.get_id()[1],
                             'centerOfMass':np.array(residue.center_of_mass())/10.0,
-                            'redoxPoints':oxygens,
+                            'sideAtoms':sideAtoms,
                             'potenial_EV': pot *0.0259/10,  
                             'avepotenial_APBS': np.mean(potentials) ,  
                             'charge':charge, 
@@ -130,8 +132,7 @@ def GetSideAtoms(residue,hasPotential,g,origin,delta):
     
         element = atom.get_id()[0]
         #oxygen and thiols are used to determine jump distance
-        if element == 'O' or element == 'S' or element == 'N' or (element == 'C' and atom.get_name() != 'CA'):
-            oxygens.append([element,coords])
+        oxygens.append([element,coords,atom.get_name()])
         atomCount +=1
     return oxygens,potentials,charge
 
@@ -211,7 +212,7 @@ def loadChargeFile(pdb_file,atom_centerOfMasss, verbose=False):
             atom_centerOfMasss[atom]['charge'] = charge        
     
 
-def getNeighborOccupancy(active1,active2, atoms_COM, vanDerWaals_guess_radius_nm=0.4):
+def getNeighborOccupancy(startAtom,endAtom, atoms_COM, vanDerWaals_guess_radius_nm=0.4):
     """Determine if the electron is tunneling through protein media or through other substances
     draw a line between atom and its neighbors, check ever .2 angstroms if there is a coord that is less than radius from the segment location
 
@@ -224,8 +225,8 @@ def getNeighborOccupancy(active1,active2, atoms_COM, vanDerWaals_guess_radius_nm
     todo:use the redox points to determine the radius
     """  
      
-    startAtom = active1['centerOfMass']
-    endAtom = active2['centerOfMass']
+    #startAtom = active1['centerOfMass']
+    #endAtom = active2['centerOfMass']
     slope = endAtom - startAtom
     
     length = np.linalg.norm(slope)
@@ -240,14 +241,19 @@ def getNeighborOccupancy(active1,active2, atoms_COM, vanDerWaals_guess_radius_nm
         percent =0
         for d in range(len(stops)):
             for atom in atoms_COM:
-                coord = atom['centerOfMass']
-                dd= np.linalg.norm(coord - stops[d])
-                if dd< vanDerWaals_guess_radius_nm:
-                    percent += 1
+                found =False
+                for sideAtom in atom['sideAtoms']:
+                    coord = sideAtom[1]
+                    dd= np.linalg.norm(coord - stops[d])*10
+                    if dd< atomicVanDerWaalsRadius_A[sideAtom[0]]:
+                        found=True 
+                        break
+                if found:
+                    percent +=1
                     break
                 
         percent = percent / len(stops)
-         
+       
         return percent   
 
 def CalculatePotentials(atom_COM,activeAminos,startIjectNode,endIjectNode,appliedVoltage_V, verbose =False):
@@ -369,18 +375,31 @@ def MinDistanceA(donor,accepter):
         float: distance in Angstroms between the two redox cofactors
     """
     r_min = 1000
-
-    for D in donor['redoxPoints']:
-        for A in accepter['redoxPoints']:
+    
+    #only consider the rings and side chains
+    donors = [x for x in donor['sideAtoms'] if x[-1] != 'N' and x[-1]!='CA' and x[-1]!='CB' and x[-1]!='C' and x[-1]!='O' and x[-1]!='CB']
+    accepters = [x for x in accepter['sideAtoms'] if x[-1] != 'N' and x[-1]!='CA' and x[-1]!='CB' and x[-1]!='C' and x[-1]!='O' and x[-1]!='CB']
+    
+    minD=0
+    minA=0
+    for D in donors:
+        for A in accepters:
             d = np.linalg.norm(A[1] - D[1])
             if d < r_min:
                 # minimum distance
-                r_min = d
+                r_min = d 
+                minD =D 
+                minA =A
+                
+    minDonor = minD[1]
+    minAcceptor = minA[1]
+    r_min2 = r_min*10# - (atomicSingleBondLength_A[minD[0]] + atomicSingleBondLength_A[minA[0]])*.95 # convert to angstroms assume the tunneling distance is from inside the van der waals radius
+    
 
-    return  r_min*10  # convert to angstroms
+    return  minDonor,minAcceptor, r_min2
     
     
-def DistanceRates(atom_COM,r_min,donor, acceptor, attemptFrequency, vibrationRadius_nm,dutton_radius_A, r_COM_A):
+def DistanceRates(atom_COM,minDonor,minAcceptor,r_min,donor, acceptor, attemptFrequency, vibrationRadius_nm,dutton_radius_A, r_COM_A):
     """Calculate the distance effect on electron transfer.  
 
     Args:
@@ -392,44 +411,42 @@ def DistanceRates(atom_COM,r_min,donor, acceptor, attemptFrequency, vibrationRad
     """
     
     # determine the occupancy of the path between the two redox cofactors
-    protDensity =  getNeighborOccupancy(donor, acceptor, atom_COM)
-                
+    protDensity =  getNeighborOccupancy(minDonor,minAcceptor, atom_COM)
+    
     # protDensity is going to vary between 0 and 1.  -.9 represents tunneling through the 100% protein media, while -2.8 estimates tunneling through vacuum or water
     #water rate is taken from Long-range electron transferHarry B. Gray†and Jay R. Winkler
-    gamma =    -1.2*protDensity - 1.6*(1-protDensity)
+    gamma =    -.9*protDensity - 2.8*(1-protDensity)
     
-
+    #gamma = -1.4
     # distance rate for fixed pdb file coordinates
-    distance_rate_static = attemptFrequency * np.exp(gamma * r_min)
+    distance_rate_static = attemptFrequency * np.exp(gamma * r_min) *.1
     # distance adjustment for vibrating pdb file coordinates  
     vibrate = vibrationRadius_nm*10.0
      
-    
-    rv_min = r_min - vibrate
     alter=100
     if  donor['std'] > 0 and acceptor['std'] > 0:
-        vibrate = np.mean([donor['std'], acceptor['std']])*10 #convert to angstroms
-        rv_min = r_min - vibrate
-        alter =5* np.exp(gamma * gamma * vibrate) 
-    if rv_min < 0:
-        rv_min = .1
+        vibrate = np.mean([donor['std'], acceptor['std']]) 
+        #print(f"vibrate {vibrate}")
+        alter = np.exp(( -1.4 *vibrate)**2) 
+    else:
+        print('no std')
     
-        
-    distance_rate_vibrate = attemptFrequency*(np.exp(gamma * (r_min-vibrate)) + np.exp(
-        gamma * r_min) + np.exp(gamma * (r_min+vibrate)))/3
+    gammaV=-1.4
+    preVibrate = 2.7/7* np.exp(gammaV/2 * r_min)
+    preG= (.01e-9)* np.pi*preVibrate**2/hbar_eV*np.exp( 3/2*gammaV*gammaV*vibrate*vibrate) 
+    
+    distance_rate_vibrate =attemptFrequency * np.exp(gammaV * r_min) * np.exp(gammaV*gammaV*vibrate*vibrate/2) *.1
 
     # cheat for g value by using the dutton radius to form a sharp transition between the distant dependant reqime and the distant independent regime
     # simplification of figure 6 from Electron Tunneling in Biology: When Does it Matter?
-    
     if r_COM_A < dutton_radius_A :
-        distance_rate_min = attemptFrequency*np.exp(-1.4 * dutton_radius_A) *alter
+        distance_rate_min =1e2* attemptFrequency*np.exp(-1.4 * dutton_radius_A) *alter#*.8
     else:
-#        distance_rate_min = attemptFrequency*np.exp(gamma * (r_min))#*1+ 4*r_COM_A)/5)
-        distance_rate_min = attemptFrequency*np.exp(-1.4  * (r_COM_A))*alter#*1+ 4*r_COM_A)/5)
+        distance_rate_min =1e2* attemptFrequency*np.exp(-1.4  * (r_COM_A))*alter#*.8
 
-    return  gamma, distance_rate_static, distance_rate_vibrate, distance_rate_min
+    return  gamma,preG, distance_rate_static, distance_rate_vibrate, distance_rate_min
 
-def RedoxRates(donor, acceptor,reorgE_EV, beta):
+def RedoxRates(donor, acceptor,reorgE_EV, beta, preG):
     """Calculate the electron transfer rates between two redox cofactors, use the standard potentials to estimate delta G0
     voltage differences between the factors are added into the delta G0
 
@@ -441,18 +458,23 @@ def RedoxRates(donor, acceptor,reorgE_EV, beta):
     """
     #get the energy difference between the two redox cofactors    
     dE = acceptor['redoxEnergy_EV']-  donor['redoxEnergy_EV'] 
-    dV = acceptor['totalPotential'] - donor['totalPotential'] 
+    dV =   acceptor['totalPotential'] - donor['totalPotential'] 
     
     
     #get the forward rate 
     dF_F = (reorgE_EV + dE+dV)**2/(4*reorgE_EV)
+     
+    g_F=preG/ np.sqrt(reorgE_EV* dF_F)
+    
     energy_rate_forward = np.exp(-beta * dF_F)
     
     #get the backard rate for returning to acceptor
     dF_B = (reorgE_EV - dE -dV)**2/(4*reorgE_EV)
+    g_B=preG/ np.sqrt(reorgE_EV* dF_B)
+    
     energy_rate_back = np.exp(-beta * dF_B)
     
-    return dE+dV,dF_F,dF_B,energy_rate_forward,energy_rate_back
+    return dE+dV,dF_F,dF_B, g_F,g_B, energy_rate_forward,energy_rate_back
 
     
 def RateNetwork(G):
@@ -472,6 +494,8 @@ def RateNetwork(G):
             otherNode.append(edge[1])
         rates = np.array(rates)
         sort=np.argsort(-1*rates)
+        rawRates = rates[sort]
+        rawTimes = 1/rawRates
         rates = np.cumsum(rates[sort])
         max = rates[-1]
         rates = rates/max
@@ -479,9 +503,11 @@ def RateNetwork(G):
         
     
         G.nodes[node]['rates'] = rates #cumulative probability of leaving this node
+        G.nodes[node]['times'] = rawTimes #raw times to leave this node
+        G.nodes[node]['rawrates'] = rawRates #raw times to leave this node
         G.nodes[node]['targets'] = targets #nodes assigned to each rate
-        G.nodes[node]['outtime'] =1/ max  #average time to leave this node in ns
-    
+        G.nodes[node]['outrate'] = max  #average time to leave this node in 1/ns
+   
 def MoveElectron(G_test, electronLocation):
     """Walk through the probabilities avaible at this node and select the node based on a random number
     The nodes have been arranged from most probably to least to allow a quick lookup
@@ -494,6 +520,7 @@ def MoveElectron(G_test, electronLocation):
         _type_: next node location,                time to move to next node
     """
     newLocation=-1
+    rate =0
     #get all the options for electron at this step
     rates = G_test.nodes[electronLocation]['rates']
     
@@ -501,12 +528,13 @@ def MoveElectron(G_test, electronLocation):
     for i in range(len(rates)):
         if v<rates[i]:
             newLocation = G_test.nodes[electronLocation]['targets'][i]
+            jumptime = G_test.nodes[electronLocation]['times'][i]
             break
     if newLocation == -1:
         newLocation = G_test.nodes[electronLocation]['targets'][-1]
-    timeStep = G_test.nodes[newLocation]['outtime'] 
+    totalRate = G_test.nodes[newLocation]['outrate'] 
     
-    return newLocation, timeStep
+    return newLocation, totalRate, jumptime
 
 def KMC(G_test,activeAminos, injectionAminos,exitAminos, numberElectrons=5000, maxIterations = 500000 ):
     """_summary_
@@ -547,7 +575,7 @@ def KMC(G_test,activeAminos, injectionAminos,exitAminos, numberElectrons=5000, m
             cc+=1
             
             #look at the rates to get the next location
-            newLocation, Q=MoveElectron(G_test, electronLocation)
+            newLocation, Q , jumptime=MoveElectron(G_test, electronLocation)
             
             #move the time forward based on the rates available
             timeStep = 1/Q*np.log(1/rng.random())
@@ -584,7 +612,7 @@ def KMC(G_test,activeAminos, injectionAminos,exitAminos, numberElectrons=5000, m
                 electronTimes.append(np.sum( times[:cc]))
                 cc=-1
    
-    return successDwellTimes, dwellTimes, passes, electronTimes, diffusions     
+    return successDwellTimes, dwellTimes, passes, electronTimes, diffusions   
 
 
 def ConnectGraphs(activeAminos, atom_COM,reorgE_EV, beta,maxInteraction_radius_nm,attemptFrequency, vibrationRadius_nm,dutton_radius_nm, verbose=False):
@@ -609,6 +637,7 @@ def ConnectGraphs(activeAminos, atom_COM,reorgE_EV, beta,maxInteraction_radius_n
     voltageRates = []
     gammas = []
 
+    minRates =[]
     # determine the pairwise distance between each redox cofactor
     for i in range(len(activeAminos)):
         for j in range(i+1, len(activeAminos)):
@@ -619,16 +648,16 @@ def ConnectGraphs(activeAminos, atom_COM,reorgE_EV, beta,maxInteraction_radius_n
             if r_COM < maxInteraction_radius_nm:
                  
                 # walk through all the redox cofactor atoms and determine the minimum distance to the other redox cofactor atoms
-                r_min =  MinDistanceA(activeAminos[i], activeAminos[j])
+                minDonor,minAcceptor,r_min =  MinDistanceA(activeAminos[i], activeAminos[j])
 
                 ##################################################################################
                 #################     Determine distance prefactor Vr ############################
                 ##################################################################################
                 
                 #get the rates for the different distance regimes
-                gamma, distance_rate_static, distance_rate_vibrate, distance_rate_min= DistanceRates(atom_COM, r_min,activeAminos[i], activeAminos[j],
+                gamma, preG, distance_rate_static, distance_rate_vibrate, distance_rate_min= DistanceRates(atom_COM,minDonor,minAcceptor, r_min,activeAminos[i], activeAminos[j],
                                                                                                      attemptFrequency, vibrationRadius_nm,dutton_radius_nm*10, r_COM*10)
-                
+                 
                 #store for graphing
                 gammas.append(gamma)
                 distanceRates.append(  [r_min, distance_rate_static, distance_rate_vibrate, distance_rate_min])
@@ -637,13 +666,13 @@ def ConnectGraphs(activeAminos, atom_COM,reorgE_EV, beta,maxInteraction_radius_n
                 #################     Determine energy rates          ############################
                 ##################################################################################
                 # determine the energy difference between the two redox cofactors
-                dE,dF_F,dF_B,energy_rate_forward,energy_rate_back=RedoxRates(activeAminos[i], activeAminos[j],reorgE_EV, beta)
+                dE,dF_F,dF_B, g_F,g_B,energy_rate_forward,energy_rate_back=RedoxRates(activeAminos[i], activeAminos[j],reorgE_EV, beta,preG)
                 
                 #energy_rate_forward=1
                 #energy_rate_back=1
 
-                k_NA_forward = [distance_rate_static*energy_rate_forward, distance_rate_vibrate * energy_rate_forward, distance_rate_min*energy_rate_forward]
-                k_NA_back    = [distance_rate_static*energy_rate_back,    distance_rate_vibrate * energy_rate_back,    distance_rate_min*energy_rate_back]
+                k_NA_forward = [distance_rate_static*energy_rate_forward, distance_rate_vibrate * energy_rate_forward/(1+g_F), distance_rate_min*energy_rate_forward]
+                k_NA_back    = [distance_rate_static*energy_rate_back,    distance_rate_vibrate * energy_rate_back/(1+g_B),    distance_rate_min*energy_rate_back]
                 
                 #store for graphing: give examples of the transitions for 1nm gap at average protein density
                 energyRates.append([dE, attemptFrequency*np.exp(-14)* energy_rate_forward,attemptFrequency*np.exp(-14)*energy_rate_back]) #include the attempt frequency and rate at 1 nm for 1.4 1/nm gamma
@@ -662,6 +691,9 @@ def ConnectGraphs(activeAminos, atom_COM,reorgE_EV, beta,maxInteraction_radius_n
                 G_min.add_edge(i, j, time=1e9/k_NA_forward[2] ,rate = k_NA_forward[2]*1e-9, dist = r_COM, minDist = r_min /10.0)
                 G_min.add_edge(j, i, time=1e9/k_NA_back[2] ,rate = k_NA_back[2]*1e-9, dist = r_COM, minDist = r_min/10.0 )
                 
+                minRates.append(k_NA_forward[2]*1e-9)
+                minRates.append(k_NA_back[2]*1e-9)
+                
                 G_connected.add_edge(i, j, time=1e9/k_NA_forward[0] + 1e9/k_NA_back[0], distance = r_COM, minDist = r_min/10.0  )
              
     if verbose:
@@ -679,5 +711,7 @@ def ConnectGraphs(activeAminos, atom_COM,reorgE_EV, beta,maxInteraction_radius_n
         print(f'number of redox cofactors: { G_vibrate.number_of_nodes()}')
         print(f'number of tunnel gaps: { G_vibrate.number_of_edges()}')        
     
+    #plt.hist(minRates, bins=100)
+    #plt.show()
         
     return G_static, G_vibrate, G_min, G_connected, (gammas, distanceRates, energyRates, transferRates, voltageRates)
