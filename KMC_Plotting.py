@@ -418,7 +418,7 @@ def PlotGraphRates(reorg, gammas, distanceRates, energyRates, transferRates, vol
     r=rates[:,0]
     ax[1].plot(rates[:, 0], np.log10(rates[:, 1])-9, '.', label='Static')
     ax[1].plot(rates[:, 0], np.log10(rates[:, 2])-9, '.', label='Vibrate')
-    ax[1].plot(rates[:, 0], np.log10(rates[:, 3])-9, '.', label='Min_radius')
+    ax[1].plot(rates[:, 0], np.log10(rates[:, 3])-9, '.', label='Published')
     
     ax[1].set_title('Distance Prefactor')
     ax[1].set_ylabel('Transfer Rate log$_{10}$(ns$^{-1}$)')
@@ -440,7 +440,7 @@ def PlotGraphRates(reorg, gammas, distanceRates, energyRates, transferRates, vol
     
     ax[3].plot(rates[:, 0], np.log10(rates[:, 1]*1e-9), '.', label='Static')
     ax[3].plot(rates[:, 0], np.log10(rates[:, 2]*1e-9), '.', label='Vibrate')
-    ax[3].plot(rates[:, 0], np.log10(rates[:, 3]*1e-9), '.', label='Min_radius')
+    ax[3].plot(rates[:, 0], np.log10(rates[:, 3]*1e-9), '.', label='Published')
     
     dG=.85- 1.08
     ax[3].plot(r, 15-.6*r-3.1*(reorg)**2/reorg-9,'-',alpha=.25,label='Dutton Y-Y') 
@@ -556,7 +556,7 @@ def PlotShortedPaths(activeAminos,shortestPaths_static,shortestPaths_vibrate,sho
     PlotPaths(activeAminos,shortestPaths_static,axPath,injectionAminos,exitAminos)
     PlotTransitTimes(axTime, axCurrent, shortestPaths_static, 'Static')
     PlotTransitTimes(axTime, axCurrent, shortestPaths_vibrate, 'Vibrate')
-    PlotTransitTimes(axTime, axCurrent, shortestPaths_min, 'Min')
+    PlotTransitTimes(axTime, axCurrent, shortestPaths_min, 'Published')
     axTime.set_title('Total Molecule Transit Time')
     axCurrent.set_title('Total Molecule Rate')
 
