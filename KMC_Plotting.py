@@ -15,12 +15,10 @@ sns.set_context("paper")
 
      
 
-def others()    :
+def PlotKMCNetworks(activeAminos,successDwellTimes, dwellTimes, passes)    :
     #create three 3d  subplots with the x y and z views
     fig, ax = plt.subplots(2, 2, figsize =(6,6), subplot_kw={'projection': '3d'})
     ax = np.ravel(ax)
-
-
     
     PlotColorCoords(activeAminos,np.log( successDwellTimes+1), 0, ax[0], 'Success Dwell Times')
     PlotColorCoords(activeAminos,np.log(dwellTimes+1), 1, ax[1], 'Dwell Times')
@@ -30,7 +28,7 @@ def others()    :
     plt.tight_layout()
     plt.show()
     
-def PlotKMC(activeAminos,successDwellTimes, dwellTimes, passes, electronTimes, diffusions,title):
+def PlotKMC( electronTimes, diffusions,title):
     
 
     _, ax = plt.subplots(1, 3, figsize =(9,3))
@@ -370,7 +368,7 @@ def PlotPDBProjections(activeAminos,atom_COM,injectionAminos,exitAminos):
                 if acid['amino']==amino:
                     newCoords.append (acid['centerOfMass'])
             newCoords = np.array(newCoords)
-            print(newCoords.shape)
+         
             ax[2].plot (newCoords[ :,1], newCoords[:,0], newCoords[:, 2],'.', label = amino)
         ax[2].set_title('Amino Acid  ')
         ax[2].legend()
@@ -416,7 +414,7 @@ def PlotGraphRates(reorg, gammas, distanceRates, energyRates, transferRates, vol
 
     rates = np.array(distanceRates)
     r=rates[:,0]
-    ax[1].plot(rates[:, 0], np.log10(rates[:, 1])-9, '.', label='Static')
+    ax[1].plot(rates[:, 0], np.log10(rates[:, 1])-9, '.', label='Dutton')
     ax[1].plot(rates[:, 0], np.log10(rates[:, 2])-9, '.', label='Vibrate')
     ax[1].plot(rates[:, 0], np.log10(rates[:, 3])-9, '.', label='Published')
     
@@ -438,7 +436,7 @@ def PlotGraphRates(reorg, gammas, distanceRates, energyRates, transferRates, vol
     rates = np.array(transferRates)
    
     
-    ax[3].plot(rates[:, 0], np.log10(rates[:, 1]*1e-9), '.', label='Static')
+    ax[3].plot(rates[:, 0], np.log10(rates[:, 1]*1e-9), '.', label='Dutton')
     ax[3].plot(rates[:, 0], np.log10(rates[:, 2]*1e-9), '.', label='Vibrate')
     ax[3].plot(rates[:, 0], np.log10(rates[:, 3]*1e-9), '.', label='Published')
     
@@ -525,19 +523,32 @@ def PlotPaths(activeAminos,shortestPaths,ax,injectionAminos,exitAminos):
         endCoords = activeAminos[amino['aminoIndex']]['centerOfMass']
         ax.plot (endCoords [ 1], endCoords[0], endCoords[ 2],'o',color='r' )
             
-def PlotTransitTimes(axTime, axCurrent, shortestPaths, label):
+def PlotTransitTimes(axTime, axRate,axCurrent, shortestPaths, label):
     times = np.array([x['time'] for x in shortestPaths if x['time'] >0 ])
     times_sum = np.log10(  times  )
+    injectTimes = np.mean( [x['injectionTime'] for x in shortestPaths  ])
+    injectPre = np.mean( [x['injectPre'] for x in shortestPaths  ])
+    print(f"injectTimes:{injectTimes:.2e} , injectPre:{ injectPre:.2e}, ave transite time:{np.mean(times)*1e-9:.2e}")
+    
+    print(f"traveltime:{injectTimes+np.mean(times)*1e-9:.2e} , current:{ injectPre/(injectTimes+np.mean(times)*1e-9):.2e} ")
     
     #ACS Omega paper page G
-    currents_sum  = np.log10(1.0/(times *1e-9) )
+    rates_sum  = np.log10(1.0/(times *1e-9) )
     v,b,_=axTime.hist(times_sum  ,   label = label )
     mostProb =10** b[np.argmax(v)]
     
     axTime.set_xlabel('log10(Transit Time(ns))')
     axTime.legend()
-    axCurrent.hist(currents_sum ,     label = label)
-    axCurrent.set_xlabel('Log10(K$_{ET}$ ($s^{-1}$))')
+    
+    axRate.hist(rates_sum ,     label = label)
+    axRate.set_xlabel('Log10(K$_{ET}$ ($s^{-1}$))')
+    axRate.legend()  
+    
+     
+    currents_sum = np.log10(    injectPre/ (  times *1e-9  +injectTimes)  )  +9
+    bins = np.linspace(-3, 2,30)
+    axCurrent.hist(currents_sum ,bins=bins,     label = label)
+    axCurrent.set_xlabel('Log10( I-electrode-electrode (nS))')
     axCurrent.legend()  
     
     print('Network : ', label)
@@ -548,17 +559,18 @@ def PlotTransitTimes(axTime, axCurrent, shortestPaths, label):
     print('\n\n')
                 
 def PlotShortedPaths(activeAminos,shortestPaths_static,shortestPaths_vibrate,shortestPaths_min,injectionAminos,exitAminos):
-    fig = plt.figure(figsize =(12.5,4))
+    fig = plt.figure(figsize =(16.5,4))
 
-    axPath = fig.add_subplot(1, 3, 1, projection='3d')
-    axCurrent=  fig.add_subplot(1, 3, 2)
-    axTime= fig.add_subplot(1, 3, 3)
+    axPath = fig.add_subplot(1, 4, 1, projection='3d')
+    axRate=  fig.add_subplot(1, 4, 2)
+    axTime= fig.add_subplot(1, 4, 3)
+    axCurrent= fig.add_subplot(1, 4, 4)
     PlotPaths(activeAminos,shortestPaths_static,axPath,injectionAminos,exitAminos)
-    PlotTransitTimes(axTime, axCurrent, shortestPaths_static, 'Static')
-    PlotTransitTimes(axTime, axCurrent, shortestPaths_vibrate, 'Vibrate')
-    PlotTransitTimes(axTime, axCurrent, shortestPaths_min, 'Published')
+    PlotTransitTimes(axTime, axRate, axCurrent, shortestPaths_static, 'Dutton')
+    PlotTransitTimes(axTime, axRate, axCurrent, shortestPaths_vibrate, 'Vibrate')
+    PlotTransitTimes(axTime, axRate, axCurrent, shortestPaths_min, 'Published')
     axTime.set_title('Total Molecule Transit Time')
-    axCurrent.set_title('Total Molecule Rate')
+    axRate.set_title('Total Molecule Rate')
 
     plt.tight_layout(h_pad=4)
     plt.show()    
@@ -706,7 +718,7 @@ def DrawGraph(G, layout, subPlot, title,labelLongest, injectionAminos, exitAmino
     
      
     nx.draw_networkx_nodes(G, pos, nodelist=[amino['aminoIndex'] for amino in injectionAminos] , node_color='r', node_size=30)
-    nx.draw_networkx_nodes(G, pos, nodelist=[amino['aminoIndex'] for amino in exitAminos], node_color='r', node_size=30)
+    nx.draw_networkx_nodes(G, pos, nodelist=[amino['aminoIndex'] for amino in exitAminos], node_color='g', node_size=30)
     
     if labelLongest:
         #find the three longest edges and label them

@@ -21,6 +21,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 hbar_eV = 6.582119569e-16 #eV*s
 kbT_eV = 8.617333262145E-5*300 #eV
+electronCharge = 1.60217662e-19 #C
 
 sns.set_style("whitegrid")
 sns.set_context("paper")
@@ -374,11 +375,18 @@ def MinDistanceA(donor,accepter):
     Returns:
         float: distance in Angstroms between the two redox cofactors
     """
-    r_min = 1000
+    r_min = 100000000
     
     #only consider the rings and side chains
-    donors = [x for x in donor['sideAtoms'] if x[-1] != 'N' and x[-1]!='CA' and x[-1]!='CB' and x[-1]!='C' and x[-1]!='O' and x[-1]!='CB']
-    accepters = [x for x in accepter['sideAtoms'] if x[-1] != 'N' and x[-1]!='CA' and x[-1]!='CB' and x[-1]!='C' and x[-1]!='O' and x[-1]!='CB']
+    if donor['amino']== 'HIS':
+        donors = [x for x in donor['sideAtoms'] if  x[-1]!='CA' and x[-1]!='CB' and x[-1]!='C' and x[-1]!='O' and x[-1]!='CB']
+    else:
+        donors = [x for x in donor['sideAtoms'] if x[-1] != 'N' and x[-1]!='CA' and x[-1]!='CB' and x[-1]!='C' and x[-1]!='O' and x[-1]!='CB']
+        
+    if accepter['amino']== 'HIS':
+        accepters = [x for x in accepter['sideAtoms'] if   x[-1]!='CA' and x[-1]!='CB' and x[-1]!='C' and x[-1]!='O' and x[-1]!='CB']
+    else:
+        accepters = [x for x in accepter['sideAtoms'] if x[-1] != 'N' and x[-1]!='CA' and x[-1]!='CB' and x[-1]!='C' and x[-1]!='O' and x[-1]!='CB']
     
     minD=0
     minA=0
@@ -391,6 +399,10 @@ def MinDistanceA(donor,accepter):
                 minD =D 
                 minA =A
                 
+    if r_min==100000000:
+        print(f"no min distance found {donor['amino']} {accepter['amino']}")
+        print(donor)
+        r_min=0
     minDonor = minD[1]
     minAcceptor = minA[1]
     r_min2 = r_min*10# - (atomicSingleBondLength_A[minD[0]] + atomicSingleBondLength_A[minA[0]])*.95 # convert to angstroms assume the tunneling distance is from inside the van der waals radius
